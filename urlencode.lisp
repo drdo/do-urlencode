@@ -56,5 +56,5 @@
                 (go start))
                (t (error 'urlencode-malformed-string :string string)))
        end
-         (princ (octets-to-string (get-output-stream-sequence tmp))
+         (princ (octets-to-string (get-output-stream-sequence tmp) :encoding :UTF-8)
                 stream)))))

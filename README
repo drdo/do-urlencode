@@ -1,0 +1,3 @@
+(URLENCODE string) → urlencoded-string
+
+(URLDECODE urlencoded-string) → string

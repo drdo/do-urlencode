@@ -4,4 +4,4 @@
 (URLDECODE urlencoded-string) → string
 
   Will signal URLENCODE-MALFORMED-STRING if urlencoded-string
-  is not a valid urlencoded string
+  is not a valid urlencoded string.

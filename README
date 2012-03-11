@@ -1,7 +1,10 @@
 (URLENCODE string) → urlencoded-string
-
+  If QUERYP is true you get application/x-www-form-urlencoded (default is false)
 
 (URLDECODE urlencoded-string) → string
+  If LENIENTP is true no error will be thrown on unencoded reserved characters.
+  If QUERYP is true you get application/x-www-form-urlencoded (default is false).
+  EOL can be :CR or :LF or :CRLF, to choose what line endings the final string will have.
 
   Will signal URLENCODE-MALFORMED-STRING if urlencoded-string
   is not a valid urlencoded string.

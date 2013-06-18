@@ -41,7 +41,7 @@
          (go start)
        end))))
 
-(defun urldecode (string &key (lenientp nil) (queryp nil) (eol :lf))
+(defun urldecode (string &key (queryp nil) (eol :lf) (lenientp nil))
   (flet ((get-string (octet-stream)
            (octets-to-string (get-output-stream-sequence octet-stream) :encoding :UTF-8)))
     (handler-case

@@ -1,12 +1,23 @@
 (cl:in-package :urlencode)
 
-(defvar +extra-unreserved-characters+ "-_.~")
+(declaim (ftype (function ((unsigned-byte 8)) character) octet-to-ascii))
+(defun octet-to-ascii (octet)
+  (aref (octets-to-string (make-array '(1)
+                                      :element-type '(unsigned-byte 8)
+                                      :initial-element octet)
+                          :encoding :ASCII) 0))
 
-(defun unreserved-char-p (c)
-  (or (char<= #\A c #\Z)
-      (char<= #\a c #\z)
-      (char<= #\0 c #\9)
-      (find c +extra-unreserved-characters+ :test #'char=)))
+(declaim (type (array (unsigned-byte 8) (4)) +extra-unreserved-octets+))
+(defvar +extra-unreserved-octets+
+  (make-array '(4) :element-type '(unsigned-byte 8)
+              :initial-contents #(#x2D #x2E #x5F #x7E)))
+
+(declaim (ftype (function ((unsigned-byte 8)) boolean) unreserved-octet-p))
+(defun unreserved-octet-p (o)
+  (or (<= #x30 o #x39) ; #\0 to #\9
+      (<= #x41 o #x5A) ; #\A to #\Z
+      (<= #x61 o #x7A) ; #\a to #\z
+      (if (find o +extra-unreserved-octets+ :test #'=) t nil)))
 
 (define-condition urlencode-malformed-string (error)
   ((string :initarg :string :reader urlencode-malformed-string-string))
@@ -14,75 +25,64 @@
              (format stream "The string ~s is not a valid urlencoded string."
                      (urlencode-malformed-string-string c)))))
 
+(declaim (ftype (function (simple-string
+                           &key (:queryp boolean))
+                          simple-string)
+                urlencode))
 (defun urlencode (string &key (queryp nil))
-  (with-output-to-string (stream)
-    (let ((i 0)
-          (length (length string))
-          c)
-      (declare (type fixnum i length))
-      (tagbody
-       start
-         (unless (< i length)
-           (go end))
-         (setq c (aref string i))
-         (incf i)
-         (cond ((unreserved-char-p c)
-                (write-char c stream))
-               ((char= c #\Return)
-                (write-char #\Newline stream)
-                (when (and (< i length) (char= (aref string i) #\Newline))
-                  (incf i)))
-               ((and queryp (char= c #\Space))
-                (write-char #\+ stream))
-               (t (map nil (lambda (octet)
-                             (write-char #\% stream)
-                             (format stream "~2,'0x" octet))
-                       (string-to-octets (string c) :encoding :UTF-8))))
-         (go start)
-       end))))
+  (loop
+    with octets of-type (simple-array (unsigned-byte 8) (*)) = (string-to-octets string :encoding :UTF-8)
+    with result = (make-string (* 3 (length octets)))
+    for o across octets
+    with i of-type fixnum = 0
+    do (flet ((push-char (c)
+                (setf (aref result i) c)
+                (incf i)))
+         (cond ((unreserved-octet-p o)
+                (push-char (octet-to-ascii o)))
+               ((and queryp (= o #x20))
+                (push-char #\+))
+               (t (let ((h (digit-char (ash (dpb 0 (byte 4 0) o) -4) 16))
+                        (l (digit-char (dpb 0 (byte 4 4) o) 16)))
+                    (push-char #\%)
+                    (push-char h)
+                    (push-char l)))))
+    finally (return (subseq result 0 i))))
+    
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defun urldecode (string &key (queryp nil) (eol :lf) (lenientp nil))
-  (flet ((get-string (octet-stream)
-           (octets-to-string (get-output-stream-sequence octet-stream) :encoding :UTF-8)))
-    (handler-case
-        (with-output-to-string (stream)
-          (let ((i 0)
-                (length (length string))
-                c
-                (tmp (make-in-memory-output-stream :element-type '(unsigned-byte 8))))
-            (declare (type fixnum i length))
-            (tagbody
-             start
-               (unless (< i length)
-                 (go end))
-               (setq c (aref string i))
-               (incf i)
-               (cond ((char= c #\%)
-                      (unless (< (1+ i) length)
-                        (error 'urlencode-malformed-string :string string))
-                      (let ((o (parse-integer string :start i :end (+ i 2) :radix 16)))
-                        (incf i 2)
-                        (if (and queryp (= o 13))
-                            (progn
-                              (unless (and (< (+ i 2) length)
-                                           (string= (subseq string i (+ i 3)) "%0A"))
-                                (error 'urlencode-malformed-string :string string))
-                              (case eol
-                                (:cr (write-char #\Return stream))
-                                (:lf (write-char #\Newline stream))
-                                (:crlf (progn (write-char #\Return stream)
-                                              (write-char #\Newline stream))))
-                              (incf i 3))
-                            (write-byte o tmp))))
-                     ((and (char= c #\+) queryp)
-                      (princ (get-string tmp) stream)
-                      (write-char #\Space stream))
-                     ((or lenientp (unreserved-char-p c))
-                      (princ (get-string tmp) stream)
-                      (write-char c stream))
-                     (t (error 'urlencode-malformed-string :string string)))
-               (go start)
-             end
-             (princ (get-string tmp) stream))))
-      (parse-error () (error 'urlencode-malformed-string :string string))
-      (character-decoding-error () (error 'urlencode-malformed-string :string string)))))
+(declaim (ftype (function ((unsigned-byte 8)) (or null (unsigned-byte 8)))
+                hex-to-octet))
+(defun hex-to-octet (a)
+  (cond ((<= #x30 a #x39) (- a #x30)) ; #\0 to #\9
+        ((<= #x41 a #x46) (+ 10 (- a #x41))) ; #\A to #\Z
+        ((<= #x61 a #x66) (+ 10 (- a #x61))))) ; #\a to #\z
+
+(declaim (ftype (function ((simple-array (unsigned-byte 8) (*))
+                           &key (:start fixnum))
+                          (or null (unsigned-byte 8)))
+                try-parse-hex-pair))
+(defun try-parse-hex-pair (octets &key (start 0))
+  (when (< (1+ start) (length octets))
+    (when-let ((a_ (hex-to-octet (aref octets start)))
+               (b_ (hex-to-octet (aref octets (1+ start)))))
+      (+ (ash a_ 4) b_))))
+
+(declaim (ftype (function (simple-string &key (:queryp boolean)) simple-string)
+                urldecode))
+(defun urldecode (string &key (queryp nil))
+  (loop
+    with input = (string-to-octets string :encoding :UTF-8)
+    with length = (length input)
+    with result = (make-array `(,length) :element-type '(unsigned-byte 8))
+    for j of-type fixnum from 0
+    for i of-type fixnum from 0 below length
+    do (if-let ((_ (= (aref input i) #x25)) ; #\%
+                (value (try-parse-hex-pair input :start (1+ i))))
+         (progn (setf (aref result j) value)
+                (incf i 2))
+         (setf (aref result j)
+               (if (and (= (aref input i) #x2B) queryp) ; #\+
+                   #x20 ; #\Space
+                   (aref input i))))
+    finally (return (octets-to-string result :end j :encoding :UTF-8))))

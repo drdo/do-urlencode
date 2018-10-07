@@ -1,10 +1,10 @@
 (cl:in-package :asdf)
 
 (defsystem :do-urlencode
-  :author "Daniel Oliveira <drdo@drdo.eu>"
-  :maintainer "Daniel Oliveira <drdo@drdo.eu>"
+  :author "Daniel Rebelo de Oliveira <drdo@drdo.eu>"
+  :maintainer "Daniel Rebelo de Oliveira <drdo@drdo.eu>"
   :description "Percent Encoding (aka URL Encoding) library"
-  :depends-on (:babel :babel-streams)
+  :depends-on (:alexandria :babel)
   :serial t
   :components ((:file "package")
-	       (:file "urlencode")))
+	             (:file "urlencode")))
